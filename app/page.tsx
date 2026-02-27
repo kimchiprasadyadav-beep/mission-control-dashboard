@@ -3,10 +3,17 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+console.log('Supabase URL:', supabaseUrl)
+console.log('Supabase Key exists:', !!supabaseKey)
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase environment variables')
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey)
 
 interface Project {
   id: string
@@ -28,6 +35,8 @@ interface Task {
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState({
     total: 0,
     inProgress: 0,
@@ -38,23 +47,39 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadData() {
       try {
+        setLoading(true)
+        setError(null)
+        
+        console.log('Starting data load...')
+        
         // Load projects
-        const { data: projectsData } = await supabase
+        const { data: projectsData, error: projectsError } = await supabase
           .from('projects')
           .select('*')
           .order('updated_at', { ascending: false })
 
+        if (projectsError) {
+          console.error('Projects error:', projectsError)
+          throw new Error(`Projects: ${projectsError.message}`)
+        }
+
+        console.log('Projects loaded:', projectsData?.length || 0)
         if (projectsData) {
           setProjects(projectsData)
         }
 
-        // Load tasks
-        const { data: tasksData } = await supabase
+        // Load tasks  
+        const { data: tasksData, error: tasksError } = await supabase
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false })
-          .limit(10)
 
+        if (tasksError) {
+          console.error('Tasks error:', tasksError)
+          throw new Error(`Tasks: ${tasksError.message}`)
+        }
+
+        console.log('Tasks loaded:', tasksData?.length || 0)
         if (tasksData) {
           setTasks(tasksData)
           
@@ -65,9 +90,13 @@ export default function Dashboard() {
           const urgent = tasksData.filter(t => t.priority === 'high').length
           
           setStats({ total, inProgress, completed, urgent })
+          console.log('Stats calculated:', { total, inProgress, completed, urgent })
         }
       } catch (error) {
         console.error('Error loading data:', error)
+        setError(error instanceof Error ? error.message : 'Unknown error')
+      } finally {
+        setLoading(false)
       }
     }
 
@@ -80,6 +109,16 @@ export default function Dashboard() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Mission Control 🌶️</h1>
           <p className="text-gray-600">Kimchi HQ - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          {error && (
+            <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+          {loading && (
+            <div className="mt-4 p-4 bg-blue-100 border border-blue-400 text-blue-700 rounded">
+              Loading data from Supabase...
+            </div>
+          )}
         </div>
 
         {/* Stats Cards */}
